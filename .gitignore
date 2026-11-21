@@ -85,6 +85,7 @@ web_modules/
 # build output
 dist/
 dist-electron/
+release/
 out/
 
 # macOS

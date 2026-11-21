@@ -2,6 +2,7 @@
   "name": "autotube-ai",
   "version": "1.0.0",
   "type": "module",
+  "author": "Harshvardhan",
   "description": "AutoTube AI — Autonomous YouTube Channel Manager",
   "main": "electron/main.cjs",
   "scripts": {
