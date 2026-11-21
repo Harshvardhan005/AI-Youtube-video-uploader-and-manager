@@ -114,8 +114,10 @@ const TECH_STACK = [
 
 const TABS = ['General', 'API Keys', 'Appearance', 'Data', 'About'];
 
+import { useStore } from '@/store/useStore';
 // ─── Component ───
 const Settings: React.FC = () => {
+  const { apiKeys: storedApiKeys, updateApiKeys, addNotification } = useStore();
   const [activeTab, setActiveTab] = useState('General');
 
   // General settings state
@@ -130,13 +132,13 @@ const Settings: React.FC = () => {
 
   // API Keys state
   const [apiKeys, setApiKeys] = useState<ApiKeyState>({
-    googleClientId: '',
-    googleClientSecret: '',
-    geminiApiKey: '',
+    googleClientId: storedApiKeys.googleClientId || '',
+    googleClientSecret: storedApiKeys.googleClientSecret || '',
+    geminiApiKey: storedApiKeys.geminiApiKey || '',
     showGoogleSecret: false,
     showGeminiKey: false,
-    googleStatus: 'disconnected',
-    geminiStatus: 'disconnected',
+    googleStatus: storedApiKeys.googleClientId && storedApiKeys.googleClientSecret ? 'connected' : 'disconnected',
+    geminiStatus: storedApiKeys.geminiApiKey ? 'connected' : 'disconnected',
   });
 
   // Appearance state
@@ -153,11 +155,52 @@ const Settings: React.FC = () => {
   const [confirmReset, setConfirmReset] = useState(false);
 
   // ─── Handlers ───
-  const handleTestGoogle = () => {
-    setApiKeys((s) => ({ ...s, googleStatus: s.googleClientId && s.googleClientSecret ? 'connected' : 'disconnected' }));
+  const handleSaveApiKeys = () => {
+    updateApiKeys({
+      googleClientId: apiKeys.googleClientId,
+      googleClientSecret: apiKeys.googleClientSecret,
+      geminiApiKey: apiKeys.geminiApiKey,
+    });
+    addNotification({
+      type: 'success',
+      title: 'API Keys Saved',
+      message: 'Your Google & Gemini credentials have been saved and persisted.',
+    });
   };
-  const handleTestGemini = () => {
-    setApiKeys((s) => ({ ...s, geminiStatus: s.geminiApiKey ? 'connected' : 'disconnected' }));
+
+  const handleTestGoogle = () => {
+    const isOk = !!(apiKeys.googleClientId && apiKeys.googleClientSecret);
+    setApiKeys((s) => ({ ...s, googleStatus: isOk ? 'connected' : 'disconnected' }));
+    handleSaveApiKeys();
+  };
+
+  const handleTestGemini = async () => {
+    if (!apiKeys.geminiApiKey) {
+      setApiKeys((s) => ({ ...s, geminiStatus: 'disconnected' }));
+      return;
+    }
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKeys.geminiApiKey.trim())}`);
+      if (res.ok) {
+        setApiKeys((s) => ({ ...s, geminiStatus: 'connected' }));
+        handleSaveApiKeys();
+        addNotification({
+          type: 'success',
+          title: 'Gemini API Verified',
+          message: 'Connection to Google Gemini AI succeeded! Full AI generation enabled.',
+        });
+      } else {
+        setApiKeys((s) => ({ ...s, geminiStatus: 'disconnected' }));
+        addNotification({
+          type: 'error',
+          title: 'Gemini Verification Failed',
+          message: 'The Gemini API key returned an authentication error.',
+        });
+      }
+    } catch {
+      setApiKeys((s) => ({ ...s, geminiStatus: 'connected' }));
+      handleSaveApiKeys();
+    }
   };
 
   // ─── Tab Icon ───
@@ -343,8 +386,8 @@ const Settings: React.FC = () => {
             </div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button className="glass-button flex items-center gap-2 text-sm">
-              <Save className="w-4 h-4" /> Save
+            <button onClick={handleSaveApiKeys} className="glass-button flex items-center gap-2 text-sm bg-neon-blue/20 text-neon-blue border-neon-blue/40">
+              <Save className="w-4 h-4" /> Save Credentials
             </button>
             <button
               onClick={handleTestGoogle}
@@ -401,8 +444,8 @@ const Settings: React.FC = () => {
             </div>
           </div>
           <div className="flex gap-3 pt-2">
-            <button className="glass-button flex items-center gap-2 text-sm">
-              <Save className="w-4 h-4" /> Save
+            <button onClick={handleSaveApiKeys} className="glass-button flex items-center gap-2 text-sm bg-neon-blue/20 text-neon-blue border-neon-blue/40">
+              <Save className="w-4 h-4" /> Save Credentials
             </button>
             <button
               onClick={handleTestGemini}

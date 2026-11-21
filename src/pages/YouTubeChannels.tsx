@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Youtube, Star, RefreshCw, Unlink, BarChart3, Plus, Wifi, WifiOff, Settings2, ChevronDown } from 'lucide-react';
+import { Youtube, Star, RefreshCw, Unlink, BarChart3, Plus, Wifi, WifiOff, Settings2, ChevronDown, KeyRound, ExternalLink, X, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useStore } from '@/store/useStore';
+import { useStore, YouTubeChannel } from '@/store/useStore';
 import { PageHeader, StatusBadge, ToggleSwitch, formatNumber, timeAgo } from '@/components/ui';
+import { YouTubeService } from '@/services/youtube';
 
 const gradients = [
   'from-neon-blue to-neon-purple',
@@ -21,14 +22,121 @@ const YOUTUBE_CATEGORIES = [
 
 const SCHEDULE_OPTIONS = ['Manual', 'Daily at optimal time', 'Twice a week', 'Weekly', 'Bi-weekly'];
 
-const YouTubeChannels: React.FC = () => {
-  const { channels, setDefaultChannel, removeChannel, automation, updateAutomation } = useStore();
+export const YouTubeChannels: React.FC = () => {
+  const { channels, addChannel, setDefaultChannel, removeChannel, syncChannel, apiKeys, addNotification, setCurrentPage } = useStore();
   const [syncing, setSyncing] = useState<Record<string, boolean>>({});
   const [expandedRules, setExpandedRules] = useState<string | null>(null);
 
-  const handleSync = (id: string) => {
+  // Connect Channel Modal State
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [authMethod, setAuthMethod] = useState<'oauth' | 'token'>('oauth');
+  const [clientId, setClientId] = useState(apiKeys.googleClientId || '');
+  const [clientSecret, setClientSecret] = useState(apiKeys.googleClientSecret || '');
+  const [authCode, setAuthCode] = useState('');
+  const [directToken, setDirectToken] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const handleSync = async (id: string) => {
     setSyncing((s) => ({ ...s, [id]: true }));
-    setTimeout(() => setSyncing((s) => ({ ...s, [id]: false })), 2000);
+    await syncChannel(id);
+    setSyncing((s) => ({ ...s, [id]: false }));
+  };
+
+  const handleOpenGoogleConsent = () => {
+    if (!clientId.trim()) {
+      setConnectError('Please enter your Google Client ID first (from Google Cloud Console).');
+      return;
+    }
+    const authUrl = YouTubeService.getAuthUrl(clientId.trim());
+    window.open(authUrl, '_blank', 'width=600,height=700');
+  };
+
+  const handleConnectWithCode = async () => {
+    setConnectError(null);
+    setIsSubmitting(true);
+
+    try {
+      if (authMethod === 'oauth') {
+        if (!authCode.trim()) {
+          throw new Error('Please enter the authorization code from Google.');
+        }
+        if (!clientId.trim() || !clientSecret.trim()) {
+          throw new Error('Both Client ID and Client Secret are required.');
+        }
+
+        const tokens = await YouTubeService.exchangeCodeForTokens({
+          code: authCode.trim(),
+          clientId: clientId.trim(),
+          clientSecret: clientSecret.trim(),
+        });
+
+        const profile = await YouTubeService.fetchMyChannel(tokens.accessToken);
+
+        const newChannel: YouTubeChannel = {
+          id: profile.id,
+          name: profile.name,
+          handle: profile.handle,
+          avatar: profile.avatar,
+          subscribers: profile.subscribers,
+          totalVideos: profile.totalVideos,
+          isDefault: channels.length === 0,
+          connected: true,
+          lastSync: new Date().toISOString(),
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+        };
+
+        addChannel(newChannel);
+        addNotification({
+          type: 'success',
+          title: 'YouTube Channel Linked',
+          message: `Successfully connected ${profile.name} with official Google OAuth!`,
+          channelId: profile.id,
+        });
+
+        setIsConnectModalOpen(false);
+        setAuthCode('');
+      } else {
+        // Direct Access Token
+        if (!directToken.trim()) {
+          throw new Error('Please paste your OAuth access token.');
+        }
+
+        const profile = await YouTubeService.fetchMyChannel(directToken.trim());
+
+        const newChannel: YouTubeChannel = {
+          id: profile.id,
+          name: profile.name,
+          handle: profile.handle,
+          avatar: profile.avatar,
+          subscribers: profile.subscribers,
+          totalVideos: profile.totalVideos,
+          isDefault: channels.length === 0,
+          connected: true,
+          lastSync: new Date().toISOString(),
+          accessToken: directToken.trim(),
+          expiresAt: Date.now() + 3600 * 1000,
+        };
+
+        addChannel(newChannel);
+        addNotification({
+          type: 'success',
+          title: 'YouTube Channel Linked',
+          message: `Successfully connected ${profile.name}!`,
+          channelId: profile.id,
+        });
+
+        setIsConnectModalOpen(false);
+        setDirectToken('');
+      }
+    } catch (err: any) {
+      console.error('Error connecting channel:', err);
+      setConnectError(err.message || 'Failed to authenticate channel with YouTube API.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const initials = (name: string) =>
@@ -40,11 +148,20 @@ const YouTubeChannels: React.FC = () => {
       .toUpperCase();
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 max-w-[1700px] mx-auto pb-12">
       <PageHeader
         icon={<Youtube size={22} />}
         title="YouTube Channels"
-        subtitle="Connected channels and account management"
+        subtitle="Manage connected YouTube accounts, official Google OAuth credentials & per-channel automation rules."
+        actions={
+          <button
+            onClick={() => setIsConnectModalOpen(true)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-neon-blue text-white text-xs font-semibold shadow-md flex items-center gap-1.5"
+          >
+            <Plus size={15} />
+            <span>Connect YouTube Channel</span>
+          </button>
+        }
       />
 
       {/* ── Channel Cards Grid ── */}
@@ -53,13 +170,12 @@ const YouTubeChannels: React.FC = () => {
           {channels.map((ch, i) => (
             <motion.div
               key={ch.id}
-              initial={{ opacity: 0, y: 24 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.35, delay: i * 0.08 }}
+              transition={{ duration: 0.3, delay: i * 0.05 }}
               className="glass-panel p-5 relative overflow-hidden group"
             >
-              {/* Gradient corner */}
               <div
                 className={`absolute -top-16 -right-16 w-40 h-40 bg-gradient-to-br ${gradients[i % gradients.length]} opacity-10 rounded-full blur-2xl group-hover:opacity-20 transition-opacity`}
               />
@@ -67,22 +183,24 @@ const YouTubeChannels: React.FC = () => {
               <div className="relative z-10 space-y-4">
                 {/* Header row */}
                 <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  <div
-                    className={`w-12 h-12 rounded-full bg-gradient-to-br ${gradients[i % gradients.length]} flex items-center justify-center shrink-0 shadow-lg`}
-                  >
-                    <span className="text-white text-sm font-bold">{initials(ch.name)}</span>
-                  </div>
+                  {ch.avatar ? (
+                    <img src={ch.avatar} alt={ch.name} className="w-12 h-12 rounded-full object-cover border border-white/10 shrink-0 shadow-lg" />
+                  ) : (
+                    <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${gradients[i % gradients.length]} flex items-center justify-center shrink-0 shadow-lg`}>
+                      <span className="text-white text-sm font-bold">{initials(ch.name)}</span>
+                    </div>
+                  )}
+
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-semibold text-white truncate">{ch.name}</h3>
                       {ch.isDefault && (
-                        <Star size={14} className="text-neon-orange fill-neon-orange shrink-0" />
+                        <Star size={14} className="text-neon-orange fill-neon-orange shrink-0" title="Default publishing channel" />
                       )}
                     </div>
                     <p className="text-xs text-dark-400 truncate">{ch.handle}</p>
                   </div>
-                  {/* Status */}
+
                   <div className="flex items-center gap-1.5 shrink-0">
                     {ch.connected ? (
                       <Wifi size={13} className="text-neon-green" />
@@ -110,16 +228,19 @@ const YouTubeChannels: React.FC = () => {
                 </div>
 
                 {/* OAuth status */}
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                  <div
-                    className={`w-2 h-2 rounded-full ${ch.connected ? 'bg-neon-green animate-pulse' : 'bg-neon-red'}`}
-                  />
-                  <span className="text-[11px] text-dark-300">
-                    OAuth {ch.connected ? 'Token Active' : 'Token Expired'}
-                  </span>
+                <div className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${ch.connected ? 'bg-neon-green animate-pulse' : 'bg-neon-red'}`} />
+                    <span className="text-[11px] text-dark-300">
+                      OAuth {ch.connected ? 'Active (YouTube API v3)' : 'Requires Authentication'}
+                    </span>
+                  </div>
                   {!ch.connected && (
-                    <button className="ml-auto text-[11px] text-neon-blue hover:underline">
-                      Re-auth
+                    <button
+                      onClick={() => setIsConnectModalOpen(true)}
+                      className="text-[11px] text-neon-blue hover:underline font-medium"
+                    >
+                      Authenticate →
                     </button>
                   )}
                 </div>
@@ -144,7 +265,7 @@ const YouTubeChannels: React.FC = () => {
                     {syncing[ch.id] ? 'Syncing…' : 'Sync Now'}
                   </button>
                   <button
-                    onClick={() => {/* view analytics */}}
+                    onClick={() => setCurrentPage('analytics')}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-neon-blue hover:text-neon-cyan bg-neon-blue/[0.06] hover:bg-neon-blue/[0.12] transition-colors"
                   >
                     <BarChart3 size={12} />
@@ -153,7 +274,7 @@ const YouTubeChannels: React.FC = () => {
                   <button
                     onClick={() => removeChannel(ch.id)}
                     className="ml-auto p-1.5 rounded-lg text-dark-400 hover:text-neon-red hover:bg-neon-red/[0.08] transition-colors"
-                    title="Disconnect"
+                    title="Disconnect Channel"
                   >
                     <Unlink size={14} />
                   </button>
@@ -164,150 +285,181 @@ const YouTubeChannels: React.FC = () => {
 
           {/* ── Connect New Channel Card ── */}
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
+            onClick={() => setIsConnectModalOpen(true)}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: channels.length * 0.08 }}
-            className="glass-panel border-dashed border-2 border-white/10 hover:border-neon-blue/30 p-5 flex flex-col items-center justify-center text-center min-h-[280px] group transition-colors cursor-pointer"
+            className="glass-panel border-dashed border-2 border-white/10 hover:border-red-500/40 p-5 flex flex-col items-center justify-center text-center min-h-[260px] group transition-all cursor-pointer"
           >
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-500/20 to-neon-blue/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
               <Youtube size={28} className="text-red-400" />
             </div>
-            <h3 className="text-sm font-semibold text-white mb-1">Connect a Channel</h3>
-            <p className="text-xs text-dark-400 mb-5 max-w-[200px]">
-              Link your YouTube channel to start automating uploads
+            <h3 className="text-sm font-semibold text-white mb-1">Connect YouTube Channel</h3>
+            <p className="text-xs text-dark-400 mb-4 max-w-[220px]">
+              Authorize via official Google OAuth 2.0 to automate uploads & analytics
             </p>
-            <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-neon-blue text-white text-sm font-medium shadow-lg shadow-red-500/10 hover:shadow-red-500/20 transition-all group-hover:scale-105">
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                />
-                <path
-                  fill="currentColor"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                />
-              </svg>
+            <div className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-neon-blue text-white text-xs font-semibold shadow-md">
+              <Plus size={14} />
               Connect with Google
-            </button>
+            </div>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* ── Channel Rules ── */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, delay: 0.3 }}
-      >
-        <h2 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
-          <Settings2 size={18} className="text-neon-purple" />
-          Channel Rules
-        </h2>
-
-        <div className="space-y-3">
-          {channels.map((ch, i) => {
-            const isExpanded = expandedRules === ch.id;
-            return (
-              <div key={ch.id} className="glass-panel overflow-hidden">
-                {/* Header toggle */}
-                <button
-                  onClick={() => setExpandedRules(isExpanded ? null : ch.id)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-white/[0.02] transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-8 h-8 rounded-full bg-gradient-to-br ${gradients[i % gradients.length]} flex items-center justify-center`}
-                    >
-                      <span className="text-white text-[10px] font-bold">{initials(ch.name)}</span>
-                    </div>
-                    <span className="text-sm font-medium text-white">{ch.name}</span>
-                    {ch.isDefault && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-neon-orange/10 text-neon-orange border border-neon-orange/20">
-                        Default
-                      </span>
-                    )}
+      {/* ── Connect YouTube Channel Modal ── */}
+      <AnimatePresence>
+        {isConnectModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="glass-panel p-6 max-w-xl w-full border border-white/15 bg-dark-900 shadow-2xl relative"
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-red-500/20 text-red-500">
+                    <Youtube size={20} />
                   </div>
-                  <ChevronDown
-                    size={16}
-                    className={`text-dark-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
-                  />
+                  <div>
+                    <h3 className="text-base font-bold text-white">Connect YouTube Channel</h3>
+                    <p className="text-xs text-dark-300">Authorize official YouTube Data API v3 access</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsConnectModalOpen(false)}
+                  className="p-1.5 rounded-lg text-dark-400 hover:text-white"
+                >
+                  <X size={18} />
                 </button>
-
-                <AnimatePresence>
-                  {isExpanded && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.25 }}
-                      className="overflow-hidden"
-                    >
-                      <div className="px-4 pb-4 pt-1 space-y-4 border-t border-white/[0.04]">
-                        <ToggleSwitch
-                          enabled={automation.autopilotEnabled}
-                          onChange={(v) => updateAutomation({ autopilotEnabled: v })}
-                          label="Autopilot Mode"
-                          description="Automatically publish videos after all checks pass"
-                        />
-
-                        {/* Default Category */}
-                        <div>
-                          <label className="block text-xs font-medium text-dark-200 mb-1.5">
-                            Default Category
-                          </label>
-                          <select
-                            value={automation.defaultCategory}
-                            onChange={(e) => updateAutomation({ defaultCategory: e.target.value })}
-                            className="w-full px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-white focus:outline-none focus:border-neon-blue/40"
-                          >
-                            {YOUTUBE_CATEGORIES.map((cat) => (
-                              <option key={cat} value={cat} className="bg-dark-800">
-                                {cat}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Publishing Schedule */}
-                        <div>
-                          <label className="block text-xs font-medium text-dark-200 mb-1.5">
-                            Publishing Schedule
-                          </label>
-                          <select
-                            defaultValue="Daily at optimal time"
-                            className="w-full px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-white focus:outline-none focus:border-neon-blue/40"
-                          >
-                            {SCHEDULE_OPTIONS.map((opt) => (
-                              <option key={opt} value={opt} className="bg-dark-800">
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <ToggleSwitch
-                          enabled={automation.thumbnailAutoGenerate}
-                          onChange={(v) => updateAutomation({ thumbnailAutoGenerate: v })}
-                          label="Auto-generate Thumbnails"
-                          description="Let AI create click-worthy thumbnails"
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
               </div>
-            );
-          })}
-        </div>
-      </motion.div>
+
+              {connectError && (
+                <div className="p-3 mb-4 rounded-xl bg-neon-red/10 border border-neon-red/30 text-neon-red text-xs">
+                  {connectError}
+                </div>
+              )}
+
+              {/* Tabs for method */}
+              <div className="flex rounded-lg bg-dark-950 p-1 mb-5 border border-white/5">
+                <button
+                  onClick={() => setAuthMethod('oauth')}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    authMethod === 'oauth' ? 'bg-white/10 text-white shadow' : 'text-dark-400 hover:text-white'
+                  }`}
+                >
+                  Google OAuth 2.0 (Recommended)
+                </button>
+                <button
+                  onClick={() => setAuthMethod('token')}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    authMethod === 'token' ? 'bg-white/10 text-white shadow' : 'text-dark-400 hover:text-white'
+                  }`}
+                >
+                  Direct Access Token
+                </button>
+              </div>
+
+              {authMethod === 'oauth' ? (
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="text-dark-200 font-medium block mb-1.5">Google Client ID</label>
+                    <input
+                      type="text"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      placeholder="e.g. 123456789-xxxxxx.apps.googleusercontent.com"
+                      className="glass-input font-mono text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-dark-200 font-medium block mb-1.5">Google Client Secret</label>
+                    <input
+                      type="password"
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                      placeholder="Enter Client Secret from Google Cloud Console"
+                      className="glass-input font-mono text-xs"
+                    />
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-neon-blue/5 border border-neon-blue/15 text-dark-300 space-y-2">
+                    <p className="font-semibold text-white">How to connect:</p>
+                    <ol className="list-decimal pl-4 space-y-1 text-[11px]">
+                      <li>Enter your Client ID & Secret above.</li>
+                      <li>Click the button below to open Google's account selection in your browser.</li>
+                      <li>Sign in, grant YouTube permissions, and copy the authorization code.</li>
+                    </ol>
+                    <button
+                      type="button"
+                      onClick={handleOpenGoogleConsent}
+                      className="w-full mt-2 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white font-medium flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <span>1. Open Google Sign-In Window</span>
+                      <ExternalLink size={13} />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-dark-200 font-medium block mb-1.5">Paste Authorization Code</label>
+                    <input
+                      type="text"
+                      value={authCode}
+                      onChange={(e) => setAuthCode(e.target.value)}
+                      placeholder="Paste 4/0A... authorization code here"
+                      className="glass-input font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-dark-200 font-medium block mb-1.5">YouTube OAuth Access Token</label>
+                    <textarea
+                      value={directToken}
+                      onChange={(e) => setDirectToken(e.target.value)}
+                      placeholder="Paste Bearer ya29... token here"
+                      rows={4}
+                      className="glass-input font-mono text-xs resize-none"
+                    />
+                    <p className="text-[11px] text-dark-400 mt-1">
+                      Token with scopes: <code className="text-neon-cyan">youtube.upload, youtube.readonly</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsConnectModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-dark-300 hover:text-white text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConnectWithCode}
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-neon-blue text-white text-xs font-semibold shadow-md flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Connecting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} />
+                      <span>Authorize & Link Channel</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ImageIcon, ChevronDown, Check, Monitor, Smartphone,
   Type, Palette, LayoutGrid, Sparkles, Trophy, Lightbulb,
+  Download, CheckCircle, Wand2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/ui';
 import { useStore } from '@/store/useStore';
@@ -16,433 +17,470 @@ interface ThumbnailConcept {
   overlaySubtext: string;
   ctr: number;
   style: string;
+  badge: string;
 }
 
 const makeThumbnails = (title: string): ThumbnailConcept[] => {
-  const shortTitle = title.split(' ').slice(0, 4).join(' ');
+  const shortTitle = title.split(' ').slice(0, 4).join(' ') || 'NEW VIDEO';
   return [
     {
       id: 'th-1',
       label: 'Bold Impact',
-      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)',
+      gradient: 'linear-gradient(135deg, #1e1b4b 0%, #3b82f6 50%, #8b5cf6 100%)',
       overlayText: shortTitle.toUpperCase(),
-      overlaySubtext: 'MUST WATCH',
-      ctr: 8.4,
+      overlaySubtext: 'STEP-BY-STEP GUIDE',
+      badge: 'MUST WATCH',
+      ctr: 9.4,
       style: 'bold',
     },
     {
       id: 'th-2',
-      label: 'Clean Minimal',
-      gradient: 'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)',
-      overlayText: shortTitle,
-      overlaySubtext: 'New Video',
-      ctr: 7.1,
-      style: 'minimal',
+      label: 'Curiosity Hook',
+      gradient: 'linear-gradient(135deg, #450a0a 0%, #dc2626 50%, #f97316 100%)',
+      overlayText: 'THE TRUTH ABOUT THIS...',
+      overlaySubtext: 'WHAT THEY HID FROM YOU',
+      badge: '🔥 EXPOSED',
+      ctr: 9.8,
+      style: 'curiosity',
     },
     {
       id: 'th-3',
-      label: 'Neon Pop',
-      gradient: 'linear-gradient(135deg, #f12711 0%, #f5af19 50%, #f12711 100%)',
+      label: 'Neon Contrast',
+      gradient: 'linear-gradient(135deg, #022c22 0%, #059669 50%, #06b6d4 100%)',
       overlayText: shortTitle.toUpperCase(),
-      overlaySubtext: '🔥 TRENDING',
-      ctr: 9.2,
+      overlaySubtext: 'DON’T MISS THIS in 2027',
+      badge: 'NEW',
+      ctr: 8.9,
       style: 'neon',
     },
     {
       id: 'th-4',
       label: 'Dark Cinematic',
-      gradient: 'linear-gradient(135deg, #141e30 0%, #243b55 50%, #141e30 100%)',
+      gradient: 'linear-gradient(135deg, #09090b 0%, #18181b 50%, #27272a 100%)',
       overlayText: shortTitle,
-      overlaySubtext: 'Watch Now →',
-      ctr: 6.8,
+      overlaySubtext: 'Complete Masterclass',
+      badge: '4K ULTRA',
+      ctr: 8.2,
       style: 'cinematic',
     },
   ];
 };
 
-const FONT_STYLES = ['Impact', 'Montserrat Bold', 'Bebas Neue', 'Oswald', 'Poppins Bold'];
+const FONT_STYLES = ['Impact', 'Arial Black', 'Trebuchet MS', 'Verdana', 'Georgia'];
 const COLOR_PALETTES = [
-  { name: 'Electric', colors: ['#3b82f6', '#8b5cf6', '#06b6d4'] },
-  { name: 'Sunset', colors: ['#f97316', '#ef4444', '#eab308'] },
-  { name: 'Nature', colors: ['#22c55e', '#14b8a6', '#06b6d4'] },
-  { name: 'Mono', colors: ['#ffffff', '#a1a1aa', '#3f3f46'] },
-  { name: 'Candy', colors: ['#ec4899', '#a855f7', '#6366f1'] },
-  { name: 'Fire', colors: ['#dc2626', '#f97316', '#fbbf24'] },
+  { name: 'Electric', primary: '#3b82f6', secondary: '#8b5cf6', text: '#ffffff' },
+  { name: 'Fire', primary: '#ef4444', secondary: '#f97316', text: '#ffffff' },
+  { name: 'Toxic Gold', primary: '#eab308', secondary: '#84cc16', text: '#000000' },
+  { name: 'Neon Cyan', primary: '#06b6d4', secondary: '#10b981', text: '#ffffff' },
 ];
-const LAYOUT_OPTIONS = ['Center Focus', 'Left Aligned', 'Split Frame', 'Bottom Bar'];
 
-const ThumbnailStudio: React.FC = () => {
-  const { videos } = useStore();
+export const ThumbnailStudio: React.FC = () => {
+  const { videos, updateVideo, addNotification } = useStore();
 
-  const [selectedVideoId, setSelectedVideoId] = useState('');
+  const [selectedVideoId, setSelectedVideoId] = useState(videos[0]?.id || '');
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
+  const [selectedThumb, setSelectedThumb] = useState<string>('th-1');
   const [overlayText, setOverlayText] = useState('');
+  const [subText, setSubText] = useState('');
   const [fontStyle, setFontStyle] = useState(FONT_STYLES[0]);
-  const [selectedPalette, setSelectedPalette] = useState(COLOR_PALETTES[0].name);
-  const [selectedLayout, setSelectedLayout] = useState(LAYOUT_OPTIONS[0]);
+  const [selectedPalette, setSelectedPalette] = useState(COLOR_PALETTES[0]);
+  const [appliedSuccess, setAppliedSuccess] = useState(false);
 
   const selectedVideo = useMemo(() => videos.find((v) => v.id === selectedVideoId), [videos, selectedVideoId]);
 
   const thumbnails = useMemo(() => (selectedVideo ? makeThumbnails(selectedVideo.title) : []), [selectedVideo]);
 
-  const activeConcept = useMemo(() => thumbnails.find((t) => t.id === selectedThumb) || thumbnails[0], [thumbnails, selectedThumb]);
-
-  const bestThumb = useMemo(() => {
-    if (!thumbnails.length) return null;
-    return [...thumbnails].sort((a, b) => b.ctr - a.ctr)[0];
-  }, [thumbnails]);
+  const activeConcept = useMemo(
+    () => thumbnails.find((t) => t.id === selectedThumb) || thumbnails[0],
+    [thumbnails, selectedThumb]
+  );
 
   const handleSelectVideo = (id: string) => {
-    const v = videos.find((vid) => vid.id === id);
-    if (!v) return;
     setSelectedVideoId(id);
     setDropdownOpen(false);
-    setSelectedThumb(null);
-    setOverlayText(v.title.split(' ').slice(0, 4).join(' '));
+    const v = videos.find((vid) => vid.id === id);
+    if (v) {
+      setOverlayText(v.title.split(' ').slice(0, 4).join(' ').toUpperCase());
+      setSubText('MUST WATCH');
+    }
+  };
+
+  // ─── Real 1280x720 Canvas Generator ───
+  const generateCanvas = (callback: (dataUrl: string, blob: Blob) => void) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const renderElements = () => {
+      // 1. Background: Draw captured video keyframe if available, or selected gradient
+      if (selectedVideo?.thumbnail && selectedVideo.thumbnail.startsWith('data:image')) {
+        const img = new window.Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, 1280, 720);
+
+          // Dark vignette overlay for readability
+          const vignette = ctx.createLinearGradient(0, 0, 1280, 720);
+          vignette.addColorStop(0, 'rgba(0,0,0,0.4)');
+          vignette.addColorStop(0.5, 'rgba(0,0,0,0.6)');
+          vignette.addColorStop(1, 'rgba(0,0,0,0.85)');
+          ctx.fillStyle = vignette;
+          ctx.fillRect(0, 0, 1280, 720);
+
+          drawTextAndBadges();
+        };
+        img.src = selectedVideo.thumbnail;
+      } else {
+        const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+        grad.addColorStop(0, selectedPalette.primary);
+        grad.addColorStop(0.6, selectedPalette.secondary);
+        grad.addColorStop(1, '#09090b');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 1280, 720);
+
+        drawTextAndBadges();
+      }
+    };
+
+    const drawTextAndBadges = () => {
+      // Badge Pill
+      const badgeText = activeConcept?.badge || 'WATCH NOW';
+      ctx.font = 'bold 36px sans-serif';
+      ctx.fillStyle = selectedPalette.primary;
+      ctx.beginPath();
+      ctx.roundRect(80, 100, 260, 56, 12);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(badgeText, 105, 140);
+
+      // Main Bold Headline Text
+      const textToDraw = (overlayText || activeConcept?.overlayText || 'NEW VIDEO').toUpperCase();
+      ctx.font = `900 76px "${fontStyle}", Impact, sans-serif`;
+      ctx.textAlign = 'left';
+
+      // Drop Shadow & Stroke
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetX = 6;
+      ctx.shadowOffsetY = 6;
+
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 14;
+      ctx.strokeText(textToDraw, 80, 360);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(textToDraw, 80, 360);
+
+      // Subtext
+      const sub = subText || activeConcept?.overlaySubtext || 'COMPLETE GUIDE';
+      ctx.font = 'bold 44px sans-serif';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = selectedPalette.primary;
+      ctx.fillText(sub, 80, 440);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          callback(canvas.toDataURL('image/jpeg', 0.95), blob);
+        }
+      }, 'image/jpeg', 0.95);
+    };
+
+    renderElements();
+  };
+
+  const handleDownloadThumbnail = () => {
+    generateCanvas((dataUrl) => {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `AutoTube-Thumbnail-${selectedVideo?.id || 'export'}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      addNotification({
+        type: 'success',
+        title: 'Thumbnail Exported',
+        message: 'Downloaded 1280x720 high-resolution thumbnail JPEG to your computer!',
+        videoId: selectedVideoId,
+      });
+    });
+  };
+
+  const handleApplyAsThumbnail = () => {
+    if (!selectedVideoId) return;
+    generateCanvas((dataUrl) => {
+      updateVideo(selectedVideoId, { thumbnail: dataUrl });
+      setAppliedSuccess(true);
+      setTimeout(() => setAppliedSuccess(false), 2500);
+
+      addNotification({
+        type: 'success',
+        title: 'Thumbnail Updated',
+        message: 'Applied custom 1280x720 thumbnail to the video asset!',
+        videoId: selectedVideoId,
+      });
+    });
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-8 max-w-[1700px] mx-auto pb-12">
       <PageHeader
         icon={<ImageIcon size={22} />}
         title="Thumbnail Studio"
-        subtitle="AI-generated click-worthy thumbnails"
+        subtitle="AI-designed 1280x720 high-CTR thumbnails. Customize typography, keyframe overlays & export directly."
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadThumbnail}
+              disabled={!selectedVideo}
+              className="px-4 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white font-semibold text-xs flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+            >
+              <Download size={14} />
+              <span>Download 1280x720 Image</span>
+            </button>
+            <button
+              onClick={handleApplyAsThumbnail}
+              disabled={!selectedVideo}
+              className={`px-5 py-2.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all active:scale-95 ${
+                appliedSuccess
+                  ? 'bg-neon-green text-black'
+                  : 'bg-gradient-to-r from-neon-blue to-neon-purple text-white shadow-lg shadow-neon-blue/20'
+              }`}
+            >
+              {appliedSuccess ? (
+                <>
+                  <CheckCircle size={14} />
+                  <span>Applied to Video!</span>
+                </>
+              ) : (
+                <>
+                  <Check size={14} />
+                  <span>Apply to Video</span>
+                </>
+              )}
+            </button>
+          </div>
+        }
       />
 
-      {/* Video Selector */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel p-4">
-        <label className="text-sm text-dark-300 mb-2 block">Select a video</label>
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen((p) => !p)}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-left text-white hover:bg-white/[0.06] transition-colors"
-          >
-            <span className={selectedVideo ? 'text-white' : 'text-dark-400'}>
-              {selectedVideo ? selectedVideo.title : 'Choose a video…'}
-            </span>
-            <ChevronDown size={16} className={`text-dark-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
-          <AnimatePresence>
-            {dropdownOpen && (
-              <motion.ul
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                className="absolute z-30 mt-2 w-full rounded-xl bg-dark-800 border border-white/[0.08] shadow-xl overflow-hidden"
+      {/* Target Video Selector */}
+      <div className="relative z-20">
+        <label className="text-xs font-semibold text-dark-300 uppercase tracking-wider block mb-2">
+          Select Video for Thumbnail
+        </label>
+        <button
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+          className="w-full max-w-xl glass-panel px-4 py-3 flex items-center justify-between text-left hover:border-white/20 transition-colors"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-neon-purple/10 border border-neon-purple/20 flex items-center justify-center shrink-0">
+              <ImageIcon size={16} className="text-neon-purple" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white truncate">
+                {selectedVideo ? selectedVideo.title : 'No videos in queue'}
+              </div>
+              <div className="text-[11px] text-dark-400">
+                {selectedVideo ? `${selectedVideo.channelName} • Resolution: 1280x720` : 'Upload a video first'}
+              </div>
+            </div>
+          </div>
+          <ChevronDown size={18} className={`text-dark-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {dropdownOpen && (
+          <div className="absolute top-full left-0 mt-2 w-full max-w-xl glass-panel bg-dark-900/95 border border-white/10 shadow-2xl rounded-xl overflow-hidden py-1">
+            {videos.map((v) => (
+              <div
+                key={v.id}
+                onClick={() => handleSelectVideo(v.id)}
+                className={`px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors ${
+                  v.id === selectedVideoId ? 'bg-neon-blue/10 text-neon-blue' : 'text-white'
+                }`}
               >
-                {videos.map((v) => (
-                  <li key={v.id}>
-                    <button
-                      onClick={() => handleSelectVideo(v.id)}
-                      className={`w-full px-4 py-3 text-left text-sm hover:bg-white/[0.06] transition-colors flex items-center gap-3 ${
-                        v.id === selectedVideoId ? 'bg-white/[0.08] text-neon-blue' : 'text-white'
-                      }`}
-                    >
-                      <div className="w-16 h-9 rounded bg-gradient-to-br from-neon-purple/30 to-neon-blue/30 flex-shrink-0" />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{v.title}</p>
-                        <p className="text-xs text-dark-400">{v.channelName}</p>
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </motion.ul>
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-
-      {/* Panels — only when video selected */}
-      <AnimatePresence>
-        {selectedVideo && (
-          <motion.div
-            key={selectedVideoId}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="space-y-6"
-          >
-            {/* ── Thumbnail Grid ── */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles size={18} className="text-neon-purple" />
-                <h2 className="text-lg font-semibold text-white">AI Thumbnail Concepts</h2>
-                <span className="ml-auto text-xs text-dark-400">4 generated</span>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{v.title}</div>
+                  <div className="text-xs text-dark-400">{v.channelName}</div>
+                </div>
+                {v.id === selectedVideoId && <Check size={16} className="text-neon-blue shrink-0" />}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {thumbnails.map((th, i) => (
-                  <motion.div
-                    key={th.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: 0.12 + i * 0.08 }}
-                    className={`relative group cursor-pointer rounded-xl overflow-hidden border-2 transition-all ${
-                      selectedThumb === th.id
-                        ? 'border-neon-blue shadow-lg shadow-neon-blue/20'
-                        : 'border-white/[0.06] hover:border-white/[0.15]'
-                    }`}
-                    onClick={() => setSelectedThumb(th.id)}
-                  >
-                    {/* 16:9 thumbnail card */}
-                    <div className="relative aspect-video" style={{ background: th.gradient }}>
-                      {/* Overlay text simulating title */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                        <span
-                          className="text-white font-extrabold drop-shadow-lg leading-tight"
-                          style={{
-                            fontSize: th.style === 'bold' || th.style === 'neon' ? '1.1rem' : '0.95rem',
-                            textShadow: '0 2px 12px rgba(0,0,0,0.6)',
-                            letterSpacing: th.style === 'bold' ? '0.05em' : '0',
-                          }}
-                        >
-                          {overlayText || th.overlayText}
-                        </span>
-                        <span className="text-white/70 text-xs mt-1.5 font-medium tracking-wide">
-                          {th.overlaySubtext}
-                        </span>
-                      </div>
-
-                      {/* Selection badge */}
-                      {selectedThumb === th.id && (
-                        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-neon-blue flex items-center justify-center">
-                          <Check size={14} className="text-white" />
-                        </div>
-                      )}
-                      {/* CTR badge */}
-                      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/50 backdrop-blur text-xs text-white/80 font-medium">
-                        {th.ctr}% CTR est.
-                      </div>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between px-3 py-2.5 bg-dark-800">
-                      <span className="text-sm text-dark-200 font-medium">{th.label}</span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedThumb(th.id); }}
-                        className={`text-xs font-medium px-3 py-1 rounded-lg transition-colors ${
-                          selectedThumb === th.id
-                            ? 'bg-neon-blue/20 text-neon-blue'
-                            : 'bg-white/[0.06] text-dark-300 hover:text-white'
-                        }`}
-                      >
-                        {selectedThumb === th.id ? 'Selected' : 'Select'}
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* ── Customization Panel ── */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-panel p-5">
-              <div className="flex items-center gap-2 mb-5">
-                <Palette size={18} className="text-neon-cyan" />
-                <h2 className="text-lg font-semibold text-white">Customization</h2>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Text overlay */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-sm text-dark-300 mb-1.5">
-                    <Type size={14} /> Text Overlay
-                  </label>
-                  <input
-                    value={overlayText}
-                    onChange={(e) => setOverlayText(e.target.value)}
-                    placeholder="Enter overlay text…"
-                    className="w-full rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2.5 text-sm text-white placeholder-dark-400 focus:outline-none focus:border-neon-blue/40 transition-colors"
-                  />
-                </div>
-
-                {/* Font style */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-sm text-dark-300 mb-1.5">
-                    <Type size={14} /> Font Style
-                  </label>
-                  <select
-                    value={fontStyle}
-                    onChange={(e) => setFontStyle(e.target.value)}
-                    className="w-full rounded-lg bg-white/[0.04] border border-white/[0.08] px-3 py-2.5 text-sm text-white focus:outline-none focus:border-neon-blue/40 transition-colors appearance-none"
-                  >
-                    {FONT_STYLES.map((f) => (
-                      <option key={f} value={f} className="bg-dark-800">{f}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Color Palette */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-sm text-dark-300 mb-2">
-                    <Palette size={14} /> Color Palette
-                  </label>
-                  <div className="flex flex-wrap gap-3">
-                    {COLOR_PALETTES.map((p) => (
-                      <button
-                        key={p.name}
-                        onClick={() => setSelectedPalette(p.name)}
-                        className={`flex items-center gap-1 p-1.5 rounded-lg border transition-all ${
-                          selectedPalette === p.name
-                            ? 'border-neon-blue bg-white/[0.06]'
-                            : 'border-white/[0.06] hover:border-white/[0.15]'
-                        }`}
-                        title={p.name}
-                      >
-                        {p.colors.map((c) => (
-                          <div key={c} className="w-5 h-5 rounded-full" style={{ backgroundColor: c }} />
-                        ))}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Layout */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-sm text-dark-300 mb-2">
-                    <LayoutGrid size={14} /> Layout
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {LAYOUT_OPTIONS.map((l) => (
-                      <button
-                        key={l}
-                        onClick={() => setSelectedLayout(l)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                          selectedLayout === l
-                            ? 'bg-neon-blue/20 text-neon-blue border-neon-blue/30'
-                            : 'bg-white/[0.04] text-dark-300 border-white/[0.06] hover:text-white'
-                        }`}
-                      >
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* ── Preview ── */}
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="glass-panel p-5">
-              <div className="flex items-center gap-2 mb-5">
-                <Monitor size={18} className="text-neon-blue" />
-                <h2 className="text-lg font-semibold text-white">Preview</h2>
-                <span className="ml-auto text-xs text-dark-400">Desktop & Mobile</span>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Desktop frame */}
-                <div>
-                  <p className="text-xs text-dark-400 mb-2 flex items-center gap-1.5"><Monitor size={12} /> Desktop</p>
-                  <div className="rounded-xl border border-white/[0.1] bg-dark-800 p-2">
-                    {/* Browser chrome */}
-                    <div className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-t-lg bg-dark-900/50">
-                      <div className="flex gap-1">
-                        <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
-                        <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
-                      </div>
-                      <div className="flex-1 h-5 rounded bg-dark-700/50 mx-6" />
-                    </div>
-                    {/* Thumbnail */}
-                    <div
-                      className="aspect-video rounded-lg relative overflow-hidden"
-                      style={{ background: activeConcept?.gradient || 'linear-gradient(135deg, #1a1a2e, #16213e)' }}
-                    >
-                      <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-                        <span className="text-white font-extrabold text-lg drop-shadow-lg" style={{ fontFamily: fontStyle }}>
-                          {overlayText || activeConcept?.overlayText || ''}
-                        </span>
-                        <span className="text-white/60 text-xs mt-1">{activeConcept?.overlaySubtext}</span>
-                      </div>
-                    </div>
-                    {/* Video info mock */}
-                    <div className="mt-3 px-1 pb-1">
-                      <div className="h-3 w-3/4 rounded bg-white/[0.08] mb-1.5" />
-                      <div className="h-2 w-1/2 rounded bg-white/[0.04]" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mobile frame */}
-                <div>
-                  <p className="text-xs text-dark-400 mb-2 flex items-center gap-1.5"><Smartphone size={12} /> Mobile</p>
-                  <div className="mx-auto w-56 rounded-3xl border-2 border-white/[0.1] bg-dark-800 p-2 pb-4">
-                    {/* Notch */}
-                    <div className="mx-auto w-20 h-4 rounded-b-xl bg-dark-900/80 mb-2" />
-                    {/* Thumbnail */}
-                    <div
-                      className="aspect-video rounded-lg relative overflow-hidden mx-1"
-                      style={{ background: activeConcept?.gradient || 'linear-gradient(135deg, #1a1a2e, #16213e)' }}
-                    >
-                      <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
-                        <span className="text-white font-bold text-xs drop-shadow-lg leading-tight" style={{ fontFamily: fontStyle }}>
-                          {overlayText || activeConcept?.overlayText || ''}
-                        </span>
-                        <span className="text-white/60 mt-0.5" style={{ fontSize: '0.5rem' }}>{activeConcept?.overlaySubtext}</span>
-                      </div>
-                    </div>
-                    {/* Video info mock */}
-                    <div className="mt-2 px-2">
-                      <div className="h-2 w-3/4 rounded bg-white/[0.08] mb-1" />
-                      <div className="h-1.5 w-1/2 rounded bg-white/[0.04]" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* ── A/B Test Recommendation ── */}
-            {bestThumb && (
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }} className="glass-panel p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Trophy size={18} className="text-neon-orange" />
-                  <h2 className="text-lg font-semibold text-white">A/B Test Recommendation</h2>
-                </div>
-                <div className="flex items-start gap-4">
-                  {/* Best thumbnail preview */}
-                  <div
-                    className="w-40 aspect-video rounded-lg flex-shrink-0 relative overflow-hidden border border-neon-green/30"
-                    style={{ background: bestThumb.gradient }}
-                  >
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
-                      <span className="text-white font-bold text-xs drop-shadow-lg">{bestThumb.overlayText}</span>
-                    </div>
-                    <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-neon-green/20 border border-neon-green/30 text-neon-green text-[10px] font-bold">
-                      BEST
-                    </div>
-                  </div>
-                  {/* Reasoning */}
-                  <div className="flex-1 space-y-3">
-                    <div className="glass-panel p-3">
-                      <p className="text-sm text-white font-medium mb-1">
-                        <Lightbulb size={14} className="inline mr-1.5 text-neon-orange" />
-                        AI recommends: <span className="text-neon-green">{bestThumb.label}</span>
-                      </p>
-                      <p className="text-xs text-dark-300 leading-relaxed">
-                        Based on analysis of top-performing thumbnails in the <strong>{selectedVideo.category}</strong> category,
-                        the "{bestThumb.label}" style shows the highest estimated CTR at <strong>{bestThumb.ctr}%</strong>.
-                        High-contrast colors with bold text overlays consistently outperform minimal designs
-                        for this content type. The warm color palette triggers urgency and curiosity,
-                        driving 15-23% more clicks in A/B tests with similar audiences.
-                      </p>
-                    </div>
-                    <div className="flex gap-3 text-xs">
-                      {thumbnails.map((t) => (
-                        <div key={t.id} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${
-                          t.id === bestThumb.id ? 'bg-neon-green/10 text-neon-green' : 'bg-white/[0.04] text-dark-400'
-                        }`}>
-                          <div className="w-3 h-3 rounded" style={{ background: t.gradient }} />
-                          {t.ctr}%
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </motion.div>
+            ))}
+          </div>
         )}
-      </AnimatePresence>
+      </div>
+
+      {selectedVideo ? (
+        <div className="space-y-8">
+          {/* ── Concepts Grid ── */}
+          <div>
+            <h3 className="text-sm font-bold text-white mb-3">AI Thumbnail Compositions</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {thumbnails.map((th) => {
+                const isSelected = selectedThumb === th.id;
+                return (
+                  <div
+                    key={th.id}
+                    onClick={() => setSelectedThumb(th.id)}
+                    className={`glass-panel overflow-hidden border-2 cursor-pointer transition-all ${
+                      isSelected ? 'border-neon-blue shadow-lg shadow-neon-blue/20' : 'border-white/5 hover:border-white/20'
+                    }`}
+                  >
+                    <div
+                      className="aspect-video relative p-4 flex flex-col justify-between overflow-hidden"
+                      style={{ background: th.gradient }}
+                    >
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-black/60 text-white self-start">
+                        {th.badge}
+                      </span>
+                      <div>
+                        <div className="text-sm font-black text-white drop-shadow-md truncate">
+                          {overlayText || th.overlayText}
+                        </div>
+                        <div className="text-[10px] text-white/80 font-medium">
+                          {subText || th.overlaySubtext}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-dark-950 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-white">{th.label}</span>
+                      <span className="text-[11px] font-bold text-neon-green">{th.ctr}% CTR</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Customization Panel ── */}
+          <div className="glass-panel p-6">
+            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+              <Palette size={18} className="text-neon-cyan" />
+              Live Customizer
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div>
+                <label className="text-xs font-medium text-dark-300 block mb-1.5 flex items-center gap-1.5">
+                  <Type size={14} /> Main Headline Text
+                </label>
+                <input
+                  type="text"
+                  value={overlayText}
+                  onChange={(e) => setOverlayText(e.target.value)}
+                  placeholder="e.g. ULTIMATE GUIDE"
+                  className="glass-input text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-dark-300 block mb-1.5">
+                  Sub-heading / Promise
+                </label>
+                <input
+                  type="text"
+                  value={subText}
+                  onChange={(e) => setSubText(e.target.value)}
+                  placeholder="e.g. COMPLETE WALKTHROUGH"
+                  className="glass-input text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-dark-300 block mb-1.5">Font Style</label>
+                <select
+                  value={fontStyle}
+                  onChange={(e) => setFontStyle(e.target.value)}
+                  className="glass-input text-xs appearance-none cursor-pointer"
+                >
+                  {FONT_STYLES.map((f) => (
+                    <option key={f} value={f} className="bg-dark-900 text-white">
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Large Desktop & Mobile Previews ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 glass-panel p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Monitor size={16} className="text-neon-blue" />
+                  YouTube Desktop Feed Simulation
+                </h4>
+                <span className="text-xs font-mono text-dark-400">1280 x 720 (16:9)</span>
+              </div>
+
+              <div
+                className="aspect-video w-full rounded-2xl p-8 flex flex-col justify-between relative overflow-hidden border border-white/10 shadow-2xl"
+                style={{
+                  background: selectedVideo.thumbnail
+                    ? `url(${selectedVideo.thumbnail}) center/cover`
+                    : activeConcept?.gradient || 'linear-gradient(135deg, #1e1b4b, #06b6d4)',
+                }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/30" />
+                <div className="relative z-10">
+                  <span className="px-3 py-1 rounded-lg text-xs font-extrabold bg-neon-blue text-white shadow">
+                    {activeConcept?.badge || 'WATCH NOW'}
+                  </span>
+                </div>
+                <div className="relative z-10">
+                  <h2
+                    className="text-2xl md:text-4xl font-black text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)]"
+                    style={{ fontFamily: fontStyle }}
+                  >
+                    {(overlayText || activeConcept?.overlayText || 'NEW VIDEO').toUpperCase()}
+                  </h2>
+                  <p className="text-base font-bold text-neon-blue drop-shadow mt-1">
+                    {subText || activeConcept?.overlaySubtext || 'MUST WATCH'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel p-6 flex flex-col items-center">
+              <h4 className="text-sm font-bold text-white mb-4 self-start flex items-center gap-2">
+                <Smartphone size={16} className="text-neon-purple" />
+                Mobile Feed Scale
+              </h4>
+
+              <div className="w-64 rounded-3xl border-4 border-dark-700 bg-dark-950 p-3 shadow-xl">
+                <div className="w-16 h-3 rounded-full bg-dark-800 mx-auto mb-3" />
+                <div
+                  className="aspect-video rounded-xl p-3 flex flex-col justify-between relative overflow-hidden mb-2"
+                  style={{
+                    background: selectedVideo.thumbnail
+                      ? `url(${selectedVideo.thumbnail}) center/cover`
+                      : activeConcept?.gradient || 'linear-gradient(135deg, #1e1b4b, #06b6d4)',
+                  }}
+                >
+                  <div className="absolute inset-0 bg-black/40" />
+                  <span className="relative z-10 text-[8px] font-bold bg-neon-blue text-white px-1.5 py-0.5 rounded self-start">
+                    {activeConcept?.badge || 'HD'}
+                  </span>
+                  <div className="relative z-10">
+                    <span className="text-xs font-black text-white drop-shadow leading-tight block truncate">
+                      {(overlayText || activeConcept?.overlayText || 'NEW VIDEO').toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+                <div className="h-2.5 w-3/4 rounded bg-white/10 mb-1" />
+                <div className="h-2 w-1/2 rounded bg-white/5" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="glass-panel p-12 text-center text-dark-400">
+          Upload or select a video to generate custom thumbnails.
+        </div>
+      )}
     </div>
   );
 };
